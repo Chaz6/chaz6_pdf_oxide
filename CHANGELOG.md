@@ -7,11 +7,12 @@ All notable changes to PDFOxide are documented here.
 ### Fixed
 
 - **`render_page()` panicked on a page carrying a zero-dimension image** — a `/Width 0` or `/Height 0` image XObject blit unwrapped past the existing "skip quietly" path into a panic instead of being skipped. The zero-dimension blit is now skipped cleanly, matching the pre-existing handling for other degenerate-geometry cases (#1019).
+- **Inline-image extraction was non-deterministic on dictionaries carrying both abbreviated and full forms of the same key** (`/F` and `/Filter`, `/CS` and `/ColorSpace`, `/DP` and `/DecodeParms`) — the surviving value depended on `HashMap` iteration order, which varies by the per-process hash seed, so the same file could extract a different number of images (and apply or skip a predictor) across identical runs. The abbreviated form now always wins deterministically, matching how pdf.js resolves these keys (#1017).
 
 ### Contributors
 
 Issues reported by:
-- **@tobocop2** — #1019 (rendering panics on a page carrying a zero-dimension image)
+- **@tobocop2** — #1019 (rendering panics on a page carrying a zero-dimension image), #1017 (non-deterministic inline-image extraction on duplicate dictionary keys)
 
 Thank you!
 
