@@ -2,6 +2,19 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **`render_page()` panicked on a page carrying a zero-dimension image** — a `/Width 0` or `/Height 0` image XObject blit unwrapped past the existing "skip quietly" path into a panic instead of being skipped. The zero-dimension blit is now skipped cleanly, matching the pre-existing handling for other degenerate-geometry cases (#1019).
+
+### Contributors
+
+Issues reported by:
+- **@tobocop2** — #1019 (rendering panics on a page carrying a zero-dimension image)
+
+Thank you!
+
 ## [0.3.77] - 2026-07-27
 
 > Search-index control lands in every first-party binding: `prepare_search()`/`clear_search_index()` (added to the Rust core in 0.3.76 alongside the new per-page search-index cache) can now be called from Python, JavaScript/WASM, Java/Kotlin/Scala/Clojure, Go, Ruby, PHP, Dart, R, Julia, Zig, C#, C++, Swift, Objective-C, and Elixir — not just Rust. `extract_text()`/`to_markdown()`/`to_plain_text()` no longer silently drop `/Artifact`-tagged content (running headers/footers, section identifiers) with no way to opt back in.
