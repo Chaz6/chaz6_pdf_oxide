@@ -12,6 +12,7 @@ All notable changes to PDFOxide are documented here.
 - **`extract_paths` dropped or merged geometry painted with the combined fill+stroke operators `B`, `B*`, and `b*`** — only the plain fill/stroke/close operators were recognized as path-painting operators, so a path closed with one of the three combined forms fell through unrecognized, either vanishing entirely or getting merged into a neighboring path's geometry. All six PDF path-painting operators are now recognized uniformly (#1028).
 - **`extract_text()` could hang indefinitely at 100% CPU (holding the GIL in Python) on a page with a degenerate content transform matrix** — the two-column gutter-detection heuristics derive a fine-resolution scan step from the page's content width but never bounded that width itself, so a degenerate CTM inflating span x-coordinates by orders of magnitude drove the scan into an effectively unbounded loop. Content width is now capped at 100,000pt, matching the same bound already used elsewhere in the codebase for this identical hazard (#977).
 - **Image XObjects with indirect `/Width` or `/Height` references were silently dropped** — the image dimension lookup only handled inline integer values, so a `/Width 5 0 R`-style indirect reference resolved to nothing and the image was skipped entirely instead of being extracted. Both dimensions are now resolved through the document's indirect-object table before use (#1031).
+- **Document `/Info` dictionary fields (`/Title`, `/Author`, etc.) decoded UTF-16BE text strings as raw UTF-8, mangling them into replacement characters** — `DocumentInfo::from_object` called `String::from_utf8_lossy` directly on each field's raw bytes instead of the existing PDF text-string decoder every other call site already uses, so a UTF-16BE-with-BOM value (per ISO 32000-1:2008 §7.9.2.2) was corrupted since almost no UTF-16BE byte pair also forms valid UTF-8. All 8 Info fields now route through the shared decoder (#978).
 
 ### Contributors
 
@@ -20,6 +21,7 @@ Issues reported by:
 - **@MannXo** — #1028 (extract_paths drops or merges geometry painted with B, B*, and b*)
 - **@mz-zarei** — #977 (extract_text() hangs indefinitely on a page with a degenerate content transform matrix)
 - **@erichevers** — #1031 (image XObjects with indirect /Width and /Height references are dropped)
+- **@SeanPedersen** — #978 (Info dictionary UTF-16 text strings decoded as UTF-8)
 
 Thank you!
 
