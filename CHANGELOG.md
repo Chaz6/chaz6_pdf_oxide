@@ -14,6 +14,7 @@ All notable changes to PDFOxide are documented here.
 - **Image XObjects with indirect `/Width` or `/Height` references were silently dropped** — the image dimension lookup only handled inline integer values, so a `/Width 5 0 R`-style indirect reference resolved to nothing and the image was skipped entirely instead of being extracted. Both dimensions are now resolved through the document's indirect-object table before use (#1031).
 - **Document `/Info` dictionary fields (`/Title`, `/Author`, etc.) decoded UTF-16BE text strings as raw UTF-8, mangling them into replacement characters** — `DocumentInfo::from_object` called `String::from_utf8_lossy` directly on each field's raw bytes instead of the existing PDF text-string decoder every other call site already uses, so a UTF-16BE-with-BOM value (per ISO 32000-1:2008 §7.9.2.2) was corrupted since almost no UTF-16BE byte pair also forms valid UTF-8. All 8 Info fields now route through the shared decoder (#978).
 - **Word spacing (`Tw`) was incorrectly applied to multi-byte CID codes whose low byte happened to be 32, corrupting glyph spacing for embedded CID subset fonts** — per ISO 32000-1:2008 §9.3.3, `Tw` applies only to the single-byte character code 32, never to byte value 32 inside a multi-byte code (e.g. a 2-byte Identity-H CID). This gate already existed at two call sites but was missing at six others across the text extractor and rasterizer, all of which discarded the byte-width signal already available and gated on the character code alone — dropping word breaks or injecting spaces mid-word (#1016).
+- **Redaction's opaque overlay could be drawn in the wrong place when the pruned content stream left its CTM non-identity** — `redact_content_stream` serialized the pruned operators and then drew each region's overlay right after, with no CTM reset in between; a content stream carrying a trailing unmatched `cm` (e.g. a Y-flip, which is legal at end-of-stream) left that transform active, so the overlay — drawn in absolute page-space coordinates — inherited it and landed off-position. The pruned body is now wrapped in its own outer `q`/`Q` so the overlay always draws against the stream's original CTM, matching the fix shape qpdf uses for the same hazard (#1015).
 
 ### Contributors
 
@@ -24,6 +25,7 @@ Issues reported by:
 - **@erichevers** — #1031 (image XObjects with indirect /Width and /Height references are dropped)
 - **@SeanPedersen** — #978 (Info dictionary UTF-16 text strings decoded as UTF-8)
 - **@potatochipcoconut** — #1016 (word spacing corrupts glyph spacing for embedded CID subset fonts)
+- **@gngj** — #1015 (redaction overlay drawn in the wrong CTM space)
 
 Thank you!
 
