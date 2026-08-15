@@ -10,12 +10,14 @@ All notable changes to PDFOxide are documented here.
 - **Inline-image extraction was non-deterministic on dictionaries carrying both abbreviated and full forms of the same key** (`/F` and `/Filter`, `/CS` and `/ColorSpace`, `/DP` and `/DecodeParms`) — the surviving value depended on `HashMap` iteration order, which varies by the per-process hash seed, so the same file could extract a different number of images (and apply or skip a predictor) across identical runs. The abbreviated form now always wins deterministically, matching how pdf.js resolves these keys (#1017).
 - **Table cell text could gain spurious spaces inside words** — `extract_tables` decided word boundaries from a fixed gap threshold independent of the span merger's own per-glyph advance evidence, so a word drawn as several show operations could split (`Crédit` → `Cré d it`) even though `extract_spans` reconstructed it correctly on the same page. The table path now reuses the span merger's word-boundary verdict instead of re-deriving it from a separate, disagreeing heuristic (#1018).
 - **`extract_paths` dropped or merged geometry painted with the combined fill+stroke operators `B`, `B*`, and `b*`** — only the plain fill/stroke/close operators were recognized as path-painting operators, so a path closed with one of the three combined forms fell through unrecognized, either vanishing entirely or getting merged into a neighboring path's geometry. All six PDF path-painting operators are now recognized uniformly (#1028).
+- **`extract_text()` could hang indefinitely at 100% CPU (holding the GIL in Python) on a page with a degenerate content transform matrix** — the two-column gutter-detection heuristics derive a fine-resolution scan step from the page's content width but never bounded that width itself, so a degenerate CTM inflating span x-coordinates by orders of magnitude drove the scan into an effectively unbounded loop. Content width is now capped at 100,000pt, matching the same bound already used elsewhere in the codebase for this identical hazard (#977).
 
 ### Contributors
 
 Issues reported by:
 - **@tobocop2** — #1019 (rendering panics on a page carrying a zero-dimension image), #1017 (non-deterministic inline-image extraction on duplicate dictionary keys), #1018 (table cell text gains spaces inside words)
 - **@MannXo** — #1028 (extract_paths drops or merges geometry painted with B, B*, and b*)
+- **@mz-zarei** — #977 (extract_text() hangs indefinitely on a page with a degenerate content transform matrix)
 
 Thank you!
 
