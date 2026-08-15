@@ -13,6 +13,7 @@ All notable changes to PDFOxide are documented here.
 - **`extract_text()` could hang indefinitely at 100% CPU (holding the GIL in Python) on a page with a degenerate content transform matrix** — the two-column gutter-detection heuristics derive a fine-resolution scan step from the page's content width but never bounded that width itself, so a degenerate CTM inflating span x-coordinates by orders of magnitude drove the scan into an effectively unbounded loop. Content width is now capped at 100,000pt, matching the same bound already used elsewhere in the codebase for this identical hazard (#977).
 - **Image XObjects with indirect `/Width` or `/Height` references were silently dropped** — the image dimension lookup only handled inline integer values, so a `/Width 5 0 R`-style indirect reference resolved to nothing and the image was skipped entirely instead of being extracted. Both dimensions are now resolved through the document's indirect-object table before use (#1031).
 - **Document `/Info` dictionary fields (`/Title`, `/Author`, etc.) decoded UTF-16BE text strings as raw UTF-8, mangling them into replacement characters** — `DocumentInfo::from_object` called `String::from_utf8_lossy` directly on each field's raw bytes instead of the existing PDF text-string decoder every other call site already uses, so a UTF-16BE-with-BOM value (per ISO 32000-1:2008 §7.9.2.2) was corrupted since almost no UTF-16BE byte pair also forms valid UTF-8. All 8 Info fields now route through the shared decoder (#978).
+- **Word spacing (`Tw`) was incorrectly applied to multi-byte CID codes whose low byte happened to be 32, corrupting glyph spacing for embedded CID subset fonts** — per ISO 32000-1:2008 §9.3.3, `Tw` applies only to the single-byte character code 32, never to byte value 32 inside a multi-byte code (e.g. a 2-byte Identity-H CID). This gate already existed at two call sites but was missing at six others across the text extractor and rasterizer, all of which discarded the byte-width signal already available and gated on the character code alone — dropping word breaks or injecting spaces mid-word (#1016).
 
 ### Contributors
 
@@ -22,6 +23,7 @@ Issues reported by:
 - **@mz-zarei** — #977 (extract_text() hangs indefinitely on a page with a degenerate content transform matrix)
 - **@erichevers** — #1031 (image XObjects with indirect /Width and /Height references are dropped)
 - **@SeanPedersen** — #978 (Info dictionary UTF-16 text strings decoded as UTF-8)
+- **@potatochipcoconut** — #1016 (word spacing corrupts glyph spacing for embedded CID subset fonts)
 
 Thank you!
 
