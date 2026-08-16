@@ -18,6 +18,7 @@ All notable changes to PDFOxide are documented here.
 - **Strict table extraction merged adjacent columns in tables with a dense column pitch** (e.g. a 24-column numeric table) — `detect_columns` merged adjacent column clusters using a fixed absolute-point threshold regardless of how narrow the table's actual column pitch was, so a modest fixed threshold fused every adjacent column pair in a dense table into one. The merge threshold is now capped at 0.6× the table's own median inter-column gap once at least 3 columns are present, reusing the same on-pitch ratio the table's numeric-lattice detector already relies on; sparse tables with fewer than 3 columns keep the original fixed threshold (#975).
 - **CCITTFaxDecode images with no explicit `/K` rendered blank** — per ISO 32000-1:2008 Table 11, an absent `/K` defaults to `0` (pure 1-D Group 3), but the parameter extractor and its default both defaulted to `-1` (Group 4) instead, decoding Group 3 scans with the wrong algorithm. The correct Group 3 decoder already existed; only the default value was wrong (#1030).
 - **180°-rotated text runs reported `rotation_degrees=0` and could merge into the wrong span** — the rotation-detection fast path only checked the matrix's off-diagonal terms to spot horizontal text, but those terms are also ~0 for a 180°-rotated matrix (`sin 0°` and `sin 180°` are both 0), so upside-down runs were indistinguishable from ordinary horizontal text. Separately, the span-merge rotation gate only rejected the ±90° vertical case, so a 180°/180° pair could still merge under the portrait same-line test even though 180° text advances in the opposite X direction. Fixed both: the fast path now also checks the matrix's diagonal sign, and the merge gate now rejects any non-zero rotation on either side (#1029).
+- **`extract_spans` returned pre-CTM coordinates on large (>256KB) CAD-style content streams** — the fast-path prescan located each region's starting graphics state by scanning backward for the nearest unmatched `q`, but only ever tracked `q`/`Q`, never `cm`. A common CAD-exporter pattern issues a single top-level `cm` with no enclosing `q` at all, right at the start of the stream; that transform's bytes sit before the region the backward scan carved out, so it was silently excluded with no fallback ever triggered to recover it — text was then parsed under an identity CTM instead of the real scale, while `extract_chars` (which doesn't use this fast path) reported the same glyphs correctly. The prescan now also tracks whether it saw a top-level `cm` and forces the existing forward-CTM-recovery fallback when it did (#974).
 
 ### Contributors
 
@@ -30,6 +31,7 @@ Issues reported by:
 - **@potatochipcoconut** — #1016 (word spacing corrupts glyph spacing for embedded CID subset fonts)
 - **@gngj** — #1015 (redaction overlay drawn in the wrong CTM space)
 - **@Goldziher** — #975 (strict table extraction merges adjacent columns in dense-pitch tables), #1029 (180-degree rotated runs report rotation_degrees=0 and get merged)
+- **@tealtonyplanhub** — #974 (extract_spans returns pre-CTM coordinates on large CAD content streams)
 
 Thank you!
 
