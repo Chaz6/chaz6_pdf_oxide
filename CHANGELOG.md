@@ -17,6 +17,7 @@ All notable changes to PDFOxide are documented here.
 - **Redaction's opaque overlay could be drawn in the wrong place when the pruned content stream left its CTM non-identity** — `redact_content_stream` serialized the pruned operators and then drew each region's overlay right after, with no CTM reset in between; a content stream carrying a trailing unmatched `cm` (e.g. a Y-flip, which is legal at end-of-stream) left that transform active, so the overlay — drawn in absolute page-space coordinates — inherited it and landed off-position. The pruned body is now wrapped in its own outer `q`/`Q` so the overlay always draws against the stream's original CTM, matching the fix shape qpdf uses for the same hazard (#1015).
 - **Strict table extraction merged adjacent columns in tables with a dense column pitch** (e.g. a 24-column numeric table) — `detect_columns` merged adjacent column clusters using a fixed absolute-point threshold regardless of how narrow the table's actual column pitch was, so a modest fixed threshold fused every adjacent column pair in a dense table into one. The merge threshold is now capped at 0.6× the table's own median inter-column gap once at least 3 columns are present, reusing the same on-pitch ratio the table's numeric-lattice detector already relies on; sparse tables with fewer than 3 columns keep the original fixed threshold (#975).
 - **CCITTFaxDecode images with no explicit `/K` rendered blank** — per ISO 32000-1:2008 Table 11, an absent `/K` defaults to `0` (pure 1-D Group 3), but the parameter extractor and its default both defaulted to `-1` (Group 4) instead, decoding Group 3 scans with the wrong algorithm. The correct Group 3 decoder already existed; only the default value was wrong (#1030).
+- **180°-rotated text runs reported `rotation_degrees=0` and could merge into the wrong span** — the rotation-detection fast path only checked the matrix's off-diagonal terms to spot horizontal text, but those terms are also ~0 for a 180°-rotated matrix (`sin 0°` and `sin 180°` are both 0), so upside-down runs were indistinguishable from ordinary horizontal text. Separately, the span-merge rotation gate only rejected the ±90° vertical case, so a 180°/180° pair could still merge under the portrait same-line test even though 180° text advances in the opposite X direction. Fixed both: the fast path now also checks the matrix's diagonal sign, and the merge gate now rejects any non-zero rotation on either side (#1029).
 
 ### Contributors
 
@@ -28,7 +29,7 @@ Issues reported by:
 - **@SeanPedersen** — #978 (Info dictionary UTF-16 text strings decoded as UTF-8)
 - **@potatochipcoconut** — #1016 (word spacing corrupts glyph spacing for embedded CID subset fonts)
 - **@gngj** — #1015 (redaction overlay drawn in the wrong CTM space)
-- **@Goldziher** — #975 (strict table extraction merges adjacent columns in dense-pitch tables)
+- **@Goldziher** — #975 (strict table extraction merges adjacent columns in dense-pitch tables), #1029 (180-degree rotated runs report rotation_degrees=0 and get merged)
 
 Thank you!
 
