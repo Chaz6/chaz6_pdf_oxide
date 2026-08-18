@@ -5590,6 +5590,11 @@ impl<'doc> TextExtractor<'doc> {
                 // scale-relative (0.5× the text-space glyph height, ≥0.5pt
                 // floor) so it is correct at any font size and still
                 // splits genuine line breaks.
+                //
+                // The `f`/`e` tests below only mean "same line" and "forward"
+                // while the run advances along +x; under a rotated matrix the
+                // two axes swap. The added conjunct re-checks both along the
+                // run's own writing axis (ISO 32000-1 §9.4.4).
                 let cur_font_size = self.state_stack.current().font_size;
                 let is_continuation = self.merging_config.merge_tm_tj_runs
                     && match self.tj_span_buffer {
@@ -5602,7 +5607,14 @@ impl<'doc> TextExtractor<'doc> {
                                 && b == buffer.start_matrix.b
                                 && c == buffer.start_matrix.c
                                 && d == buffer.start_matrix.d
-                                && e >= buffer.start_matrix.e =>
+                                && e >= buffer.start_matrix.e
+                                && Self::advances_along_writing_axis(
+                                    buffer.start_matrix,
+                                    buffer.wmode,
+                                    e,
+                                    f,
+                                    cur_font_size,
+                                ) =>
                         {
                             // Same line, same transform, LTR progression →
                             // update width to reflect actual visual extent
@@ -8874,6 +8886,48 @@ impl<'doc> TextExtractor<'doc> {
         buffer.accumulated_width += adv;
     }
 
+    /// Whether `(e, f)` continues `start`'s run along that run's writing axis.
+    ///
+    /// ISO 32000-1:2008 §9.4.4 places the writing direction along the matrix's
+    /// `(a, b)` row, so the displacement resolves into a component along it
+    /// (the advance) and one perpendicular (the line offset). For any `b = 0,
+    /// a > 0` matrix the along test equals the caller's raw `e` test and the
+    /// perpendicular test is implied by the raw `f` band (`hypot(c, d) >=
+    /// |d|`, equal only when unskewed), so ANDing it in cannot change upright
+    /// output.
+    ///
+    /// WMode 1 is exempt: vertical text advances along `(c, d)` instead, the
+    /// branch [`GraphicsState::advance_text_matrix`] already makes, and reading
+    /// its advance as a perpendicular offset splits a column glyph by glyph.
+    fn advances_along_writing_axis(
+        start: Matrix,
+        wmode: u8,
+        e: f32,
+        f: f32,
+        font_size: f32,
+    ) -> bool {
+        if wmode != 0 {
+            return true;
+        }
+        // Unit vector along the writing direction. A degenerate (zero-scale)
+        // matrix has no direction to speak of; fall back to +x so such runs
+        // behave exactly as they did before this test existed.
+        let axis = (start.a * start.a + start.b * start.b).sqrt();
+        let (ux, uy) = if axis > 0.0 {
+            (start.a / axis, start.b / axis)
+        } else {
+            (1.0, 0.0)
+        };
+        let (dx, dy) = (e - start.e, f - start.f);
+        let along = ux * dx + uy * dy;
+        let perp = -uy * dx + ux * dy;
+        // Perpendicular scale; `hypot(c, d) >= |d|`, so an upright (`b == 0`)
+        // run keeps at least the raw `f` band.
+        let line_scale = (start.c * start.c + start.d * start.d).sqrt();
+        let tolerance = ((font_size * line_scale).abs() * 0.5).max(0.5);
+        perp.abs() <= tolerance && along >= 0.0
+    }
+
     /// Flush accumulated Tj span buffer into a single TextSpan.
     ///
     /// This is similar to flush_tj_buffer but works with the tj_span_buffer field
@@ -9342,6 +9396,70 @@ mod tests {
             !gap_has_intervening_glyph(&[left, right, descender_edge], &left, &right),
             "a descender edge clipping the gap must not be treated as an intervening glyph"
         );
+    }
+
+    /// The writing-axis continuation test, quadrant by quadrant.
+    ///
+    /// Upright cases must be no stricter than the raw `e`/`f` tests they are
+    /// ANDed with — that implication is why unrotated output cannot move.
+    /// Rotated along-axis cases pin the helper alone: in the composed
+    /// predicate the raw `f` band still gates them, so there the helper is
+    /// veto-only.
+    #[test]
+    fn test_advances_along_writing_axis_by_quadrant() {
+        let m = |a, b, c, d| Matrix {
+            a,
+            b,
+            c,
+            d,
+            e: 100.0,
+            f: 500.0,
+        };
+        let fs = 10.0;
+        let at = |mat: Matrix, de: f32, df: f32| {
+            TextExtractor::advances_along_writing_axis(mat, 0, mat.e + de, mat.f + df, fs)
+        };
+
+        // Must match the raw e/f test exactly.
+        let upright = m(1.0, 0.0, 0.0, 1.0);
+        assert!(at(upright, 14.0, 0.0), "upright advance must continue");
+        assert!(!at(upright, 0.0, -14.0), "upright line break must not");
+        assert!(!at(upright, -14.0, 0.0), "upright backwards must not");
+        // Perpendicular tolerance: 0.5 × font size (5pt here) admits a
+        // sub-glyph baseline offset; a full line step is vetoed.
+        assert!(at(upright, 14.0, 4.0), "upright sub-glyph offset must not be vetoed");
+        assert!(!at(upright, 14.0, 8.0), "upright line step must be vetoed");
+
+        // Advances along +y; lines separate along +x.
+        let cw = m(0.0, 1.0, -1.0, 0.0);
+        assert!(at(cw, 0.0, 14.0), "90° along-axis advance must not be vetoed");
+        assert!(!at(cw, 14.0, 0.0), "90° line break must not continue");
+        assert!(at(cw, -4.0, 14.0), "90° sub-glyph offset must not be vetoed");
+        assert!(!at(cw, -8.0, 14.0), "90° line step must be vetoed");
+
+        // Advances along -y; the sign a single-rotation fixture cannot catch.
+        let ccw = m(0.0, -1.0, 1.0, 0.0);
+        assert!(at(ccw, 0.0, -14.0), "270° along-axis advance must not be vetoed");
+        assert!(!at(ccw, 0.0, 14.0), "270° backwards advance must not continue");
+        assert!(!at(ccw, 14.0, 0.0), "270° line break must not continue");
+
+        // 180°: advances along -x.
+        let flip = m(-1.0, 0.0, 0.0, -1.0);
+        assert!(at(flip, -14.0, 0.0), "180° along-axis advance must not be vetoed");
+        assert!(!at(flip, 14.0, 0.0), "180° backwards advance must not continue");
+
+        // No writing direction: falls back to +x, as before.
+        let degenerate = m(0.0, 0.0, 0.0, 0.0);
+        assert!(at(degenerate, 14.0, 0.0));
+        assert!(!at(degenerate, -14.0, 0.0));
+
+        // WMode 1 advances along (c, d), so this test never vetoes it.
+        for (de, df) in [(14.0, 0.0), (0.0, 14.0), (-14.0, 0.0), (0.0, -14.0)] {
+            assert!(
+                TextExtractor::advances_along_writing_axis(cw, 1, cw.e + de, cw.f + df, fs),
+                "vertical run vetoed at ({de}, {df})"
+            );
+        }
     }
 
     #[test]
