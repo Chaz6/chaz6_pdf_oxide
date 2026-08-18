@@ -9113,6 +9113,8 @@ impl PdfDocument {
                 wmode: 0,
                 text_rise: 0.0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             });
         }
 
@@ -9284,6 +9286,8 @@ impl PdfDocument {
                 wmode: 0,
                 text_rise: 0.0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             });
         }
 
@@ -11614,6 +11618,10 @@ impl PdfDocument {
         s.bbox.y = lly + m.y;
         s.bbox.width = m.width;
         s.bbox.height = m.height;
+        // `rotation_degrees` stays raw (downstream passes select on it), so
+        // record the applied rotation for `TextSpan::page_bbox` — otherwise it
+        // would re-rotate the already-mapped rect (#806).
+        s.page_rotation_applied = rot;
     }
 
     /// Order rotated runs that were segregated out of the horizontal reading
@@ -18232,6 +18240,8 @@ impl PdfDocument {
                 wmode: 0,
                 text_rise: 0.0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             })
             .collect())
     }
@@ -25706,6 +25716,8 @@ mod tests {
             rotation_degrees: 0.0,
             wmode: 0,
             rtl_draw_logical: false,
+            mirrored: false,
+            page_rotation_applied: 0,
         }
     }
 
@@ -26238,6 +26250,8 @@ mod tests {
             rotation_degrees: 0.0,
             wmode: 0,
             rtl_draw_logical: false,
+            mirrored: false,
+            page_rotation_applied: 0,
         }
     }
 
@@ -30312,6 +30326,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             }
         }
 
@@ -30371,6 +30387,8 @@ mod tests {
             TextSpan {
                 provenance: None,
                 text_rise: 0.0,
+                mirrored: false,
+                page_rotation_applied: 0,
                 artifact_type: None,
                 text: label.to_string(),
                 bbox: Rect::new(x, y, 80.0, 12.0),
@@ -30448,6 +30466,8 @@ mod tests {
             TextSpan {
                 provenance: None,
                 text_rise: 0.0,
+                mirrored: false,
+                page_rotation_applied: 0,
                 artifact_type: None,
                 text: label.to_string(),
                 bbox: Rect::new(x, y, 80.0, 12.0),
@@ -30542,6 +30562,8 @@ mod tests {
             rotation_degrees: 0.0,
             wmode: 0,
             rtl_draw_logical: false,
+            mirrored: false,
+            page_rotation_applied: 0,
         }
     }
 
@@ -31262,6 +31284,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             }
         }
 
@@ -31337,6 +31361,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             }
         }
 
@@ -31411,6 +31437,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             }
         }
 

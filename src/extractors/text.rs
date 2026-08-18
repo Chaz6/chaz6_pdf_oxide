@@ -1899,6 +1899,10 @@ struct TjBuffer {
     /// Display rotation of this run in degrees, snapped to a quadrant when near
     /// one; `0.0` for ordinary horizontal text (see `snap_run_rotation`).
     rotation_degrees: f32,
+    /// Negative determinant of the composed matrix — mirrored text (see
+    /// `run_is_mirrored`), carried onto the emitted span so `page_bbox`
+    /// reflects rather than rotates its across-axis.
+    mirrored: bool,
     /// Writing mode (0 = horizontal, 1 = vertical) captured from the
     /// graphics state when the buffer started, so each emitted span
     /// carries the wmode it was rendered under. A font change flushes the
@@ -1956,6 +1960,13 @@ fn snap_run_rotation(combined: &Matrix) -> f32 {
         }
     }
     deg
+}
+
+/// Negative determinant of the composed text rendering matrix: the run is
+/// mirrored, so `rotation_degrees` alone cannot describe its frame (a mirrored
+/// 90° run and a clean 90° run carry the same angle but opposite across-axes).
+fn run_is_mirrored(combined: &Matrix) -> bool {
+    combined.a * combined.d - combined.b * combined.c < 0.0
 }
 
 impl TjBuffer {
@@ -2027,6 +2038,7 @@ impl TjBuffer {
             user_pos_y: user_pos.y,
             user_h_scale,
             rotation_degrees,
+            mirrored: run_is_mirrored(&combined),
             wmode: state.text_wmode,
             text_rise: if state.font_size > 0.0 {
                 state.text_rise / state.font_size
@@ -7554,6 +7566,8 @@ impl<'doc> TextExtractor<'doc> {
             wmode: buffer.wmode,
             text_rise: buffer.text_rise,
             rtl_draw_logical: false,
+            mirrored: buffer.mirrored,
+            page_rotation_applied: 0,
         };
         self.span_sequence_counter += 1;
 
@@ -8086,6 +8100,8 @@ impl<'doc> TextExtractor<'doc> {
                 0.0
             },
             rtl_draw_logical: false,
+            mirrored: run_is_mirrored(&state.ctm.multiply(&state.text_matrix)),
+            page_rotation_applied: 0,
         };
 
         // Step 6: Increment sequence counter and add to spans
@@ -8816,6 +8832,8 @@ impl<'doc> TextExtractor<'doc> {
                 0.0
             },
             rtl_draw_logical: false,
+            mirrored: run_is_mirrored(&state.ctm.multiply(&state.text_matrix)),
+            page_rotation_applied: 0,
         };
         self.span_sequence_counter += 1;
 
@@ -9035,6 +9053,8 @@ impl<'doc> TextExtractor<'doc> {
                     wmode: buffer.wmode,
                     text_rise: buffer.text_rise,
                     rtl_draw_logical: false,
+                    mirrored: buffer.mirrored,
+                    page_rotation_applied: 0,
                 };
                 self.span_sequence_counter += 1;
 
@@ -10166,6 +10186,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -10199,6 +10221,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -11087,6 +11111,8 @@ mod tests {
             rotation_degrees: 0.0,
             wmode: 0,
             rtl_draw_logical: false,
+            mirrored: false,
+            page_rotation_applied: 0,
         }
     }
 
@@ -12100,6 +12126,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -12128,6 +12156,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -12181,6 +12211,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             };
 
         // (glyph, Helvetica per-em advance width)
@@ -12242,6 +12274,8 @@ mod tests {
             rotation_degrees: 0.0,
             wmode: 0,
             rtl_draw_logical: false,
+            mirrored: false,
+            page_rotation_applied: 0,
         };
 
         // Stroke pass + fill pass at ~2 % of advance apart.
@@ -12299,6 +12333,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             });
         }
 
@@ -12498,6 +12534,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -12526,6 +12564,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -12553,6 +12593,8 @@ mod tests {
             TextSpan {
                 provenance: None,
                 text_rise: 0.0,
+                mirrored: false,
+                page_rotation_applied: 0,
                 artifact_type: None,
                 text: "Hello".to_string(),
                 bbox: Rect::new(100.0, 700.0, 30.0, 12.0),
@@ -12581,6 +12623,8 @@ mod tests {
             TextSpan {
                 provenance: None,
                 text_rise: 0.0,
+                mirrored: false,
+                page_rotation_applied: 0,
                 artifact_type: None,
                 text: "World".to_string(),
                 bbox: Rect::new(131.0, 700.0, 30.0, 12.0), // 1pt gap
@@ -12650,6 +12694,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -12678,6 +12724,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -12725,6 +12773,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -12753,6 +12803,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -12793,6 +12845,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -12821,6 +12875,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -12849,6 +12905,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -15283,6 +15341,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -15311,6 +15371,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -15349,6 +15411,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -15377,6 +15441,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -15475,6 +15541,8 @@ mod tests {
             rotation_degrees: 0.0,
             wmode: 0,
             rtl_draw_logical: false,
+            mirrored: false,
+            page_rotation_applied: 0,
         }];
 
         extractor.split_fused_words();
@@ -15514,6 +15582,8 @@ mod tests {
             rotation_degrees: 0.0,
             wmode: 0,
             rtl_draw_logical: false,
+            mirrored: false,
+            page_rotation_applied: 0,
         }];
 
         extractor.split_fused_words();
@@ -15700,6 +15770,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -15728,6 +15800,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -15812,6 +15886,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -15840,6 +15916,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -16144,6 +16222,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -16172,6 +16252,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -16382,6 +16464,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -16410,6 +16494,8 @@ mod tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -16955,6 +17041,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -16983,6 +17071,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -17030,6 +17120,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -17058,6 +17150,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -17105,6 +17199,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -17133,6 +17229,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -17186,6 +17284,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -17214,6 +17314,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -17259,6 +17361,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -17287,6 +17391,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -17329,6 +17435,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -17357,6 +17465,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -17403,6 +17513,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -17431,6 +17543,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -17472,6 +17586,8 @@ mod profile_based_space_tests {
             rotation_degrees: 0.0,
             wmode: 0,
             rtl_draw_logical: false,
+            mirrored: false,
+            page_rotation_applied: 0,
         }
     }
 
@@ -17604,6 +17720,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -17632,6 +17750,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
@@ -17687,6 +17807,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
             TextSpan {
                 provenance: None,
@@ -17715,6 +17837,8 @@ mod profile_based_space_tests {
                 rotation_degrees: 0.0,
                 wmode: 0,
                 rtl_draw_logical: false,
+                mirrored: false,
+                page_rotation_applied: 0,
             },
         ];
 
