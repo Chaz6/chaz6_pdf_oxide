@@ -17396,7 +17396,14 @@ impl PdfDocument {
                 );
             }
         }
-        // One line per rotated run (contiguous words sharing the same span index).
+        // Rotated runs, grouped into lines. A run's own extents are recorded in
+        // its frame, so the offset BETWEEN lines is the coordinate the run does
+        // not advance along: x for a +-90 degree run, y for 180. Runs that share
+        // that offset are one visual line however many `Tm`s drew them — a
+        // rotated table row is typically one run per cell. Grouping by run alone
+        // returns one line per cell (#983); grouping without the rotation key
+        // fuses perpendicular columns into one line (#804).
+        let mut run_first_word: Vec<(usize, usize)> = Vec::new();
         let mut run_start = 0;
         while run_start < words.len() {
             match word_rot_run[run_start] {
@@ -17406,11 +17413,90 @@ impl PdfDocument {
                     while run_end < words.len() && word_rot_run[run_end] == Some(run_id) {
                         run_end += 1;
                     }
-                    lines.push(words[run_start..run_end].to_vec());
+                    run_first_word.push((run_start, run_end));
                     run_start = run_end;
                 },
             }
         }
+
+        // On a /Rotate page `postprocess_spans` rect-maps each span's bbox into
+        // the displayed frame but leaves `rotation_degrees` describing the
+        // pre-display one, so the bbox axes and the rotation no longer agree and
+        // the offset read below would be taken off the wrong axis.
+        let page_is_unrotated = self.get_page_rotation(page_index).unwrap_or(0) == 0;
+
+        let mut rotated_lines: Vec<(f32, f32, Vec<Word>)> = Vec::new();
+        // Offsets of the quarter-turn lines, quantized to 1/100 pt, mapped to
+        // the indices of the lines carrying them. The match below used to scan
+        // every line built so far, which is O(runs^2) — and a rotated table,
+        // the exact page this grouping exists for, is where the run count
+        // climbs. The index answers the same question over a bounded range.
+        //
+        // Semantics are preserved exactly. A line's offset is frozen when it is
+        // created, and the winner is the FIRST such line in insertion order, so
+        // candidates are filtered by the original predicate and the smallest
+        // index wins. Merging neighbours instead would group differently:
+        // offsets 0, 3, 6 with tolerance 4 give {0,3},{6} under this rule but
+        // {0,3,6} under a chained merge.
+        let mut offset_index: std::collections::BTreeMap<i64, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (start, end) in run_first_word {
+            let word = &words[start];
+            let rotation = spans[word_rot_run[start].expect("rotated run")].rotation_degrees;
+            // Only a quarter-turn run has its line offset on x; 180 degrees and
+            // free angles keep one line per run, as before. Widening past this
+            // merges runs that were never one line.
+            let quarter_turn = (rotation.abs() - 90.0).abs() < 0.5;
+            if !quarter_turn || !page_is_unrotated {
+                rotated_lines.push((rotation, f32::NAN, words[start..end].to_vec()));
+                continue;
+            }
+            let across = word.bbox.x;
+            let tolerance = word.bbox.height.max(1.0) * 0.5;
+            let quantize = |v: f32| (f64::from(v) * 100.0).round() as i64;
+            // Widened by one step each way so a value sitting on a bucket edge
+            // cannot be missed by rounding. Saturating: the cast in `quantize`
+            // clamps |v| >= ~9.2e16 to i64::MAX/MIN, and a plain +-1 there
+            // overflows (panic in debug, an inverted `range` panic in release).
+            let (lo, hi) = (
+                quantize(across - tolerance).saturating_sub(1),
+                quantize(across + tolerance).saturating_add(1),
+            );
+            let winner = offset_index
+                .range(lo..=hi)
+                .flat_map(|(_, indices)| indices.iter().copied())
+                .filter(|&i| {
+                    let (rot, off, _) = &rotated_lines[i];
+                    (*rot - rotation).abs() < 0.5 && (*off - across).abs() <= tolerance
+                })
+                .min();
+            match winner {
+                Some(i) => rotated_lines[i].2.extend_from_slice(&words[start..end]),
+                None => {
+                    offset_index
+                        .entry(quantize(across))
+                        .or_default()
+                        .push(rotated_lines.len());
+                    rotated_lines.push((rotation, across, words[start..end].to_vec()));
+                },
+            }
+        }
+        lines.extend(rotated_lines.into_iter().map(|(rot, off, mut line)| {
+            // A merged quarter-turn line collects its runs in arrival order,
+            // which is content-stream order: a subscript drawn after the
+            // line's tail lands at the end of the string. Order members
+            // along the writing axis instead — ascending y for +90,
+            // descending for -90 — the order the text assembler reads them
+            // in. Stable, so runs sharing a coordinate keep drawing order.
+            if !off.is_nan() {
+                if rot > 0.0 {
+                    line.sort_by(|a, b| a.bbox.y.total_cmp(&b.bbox.y));
+                } else {
+                    line.sort_by(|a, b| b.bbox.y.total_cmp(&a.bbox.y));
+                }
+            }
+            line
+        }));
         // Reading order: sort lines by the span sequence of their first word
         // (stable so intra-line order is preserved).
         lines.sort_by_key(|line| line.first().map(|w| w.sequence).unwrap_or(usize::MAX));
