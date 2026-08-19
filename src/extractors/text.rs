@@ -9098,7 +9098,7 @@ impl<'doc> TextExtractor<'doc> {
         // Get current font from cached reference
         let font = self.cached_current_font.as_deref();
 
-        for (char_code, _) in TextCharIter::new(text, font) {
+        for (char_code, nbytes) in TextCharIter::new(text, font) {
             // Get current text matrix (may be updated by previous characters in this string)
             let state = self.state_stack.current();
             let text_matrix = state.text_matrix;
@@ -9144,10 +9144,14 @@ impl<'doc> TextExtractor<'doc> {
             //   vertical:   ty = w1y * Tfs + Tc + Tw    (NO Th — Tz is a
             //               glyph-stretching factor on the X axis only;
             //               see §9.3.4).
+            // Word spacing applies only to the SINGLE-BYTE code 32
+            // (ISO 32000-1 §9.3.3), never to a multi-byte code whose value
+            // happens to be 32.
+            let ws_applies = char_code == 32 && nbytes == 1;
             let mut tx = if wmode == 0 {
                 glyph_width_user_space
                     + char_space * hs_factor
-                    + if char_code == 32 {
+                    + if ws_applies {
                         word_space * hs_factor
                     } else {
                         0.0
@@ -9156,7 +9160,7 @@ impl<'doc> TextExtractor<'doc> {
                 let w1y = font
                     .map(|f| f.get_vertical_metrics(char_code).w1y)
                     .unwrap_or(crate::fonts::VerticalMetrics::SPEC_DEFAULT.w1y);
-                w1y * fs_factor + char_space + if char_code == 32 { word_space } else { 0.0 }
+                w1y * fs_factor + char_space + if ws_applies { word_space } else { 0.0 }
             };
 
             // For TextChar, we use the device-space width
