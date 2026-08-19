@@ -4,6 +4,10 @@ All notable changes to PDFOxide are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **An element's page-space rectangle is now exposed in every language binding** — `page_bbox()` reports a rect already mapped into the page's displayed frame, so callers on a rotated page get coordinates that match what they see rather than pre-`/Rotate` space. Available across the C ABI and every binding built on it (#1056, #1057).
+
 ### Fixed
 
 - **Sideways (rotated) runs reported a bounding box in the wrong frame** — a run drawn under a ±90° text matrix had its bbox described in unrotated page space, so `extract_spans`/`extract_words` returned rectangles that did not enclose the glyphs they described, and callers feeding those rects back (e.g. `extract_text_in_rect`) selected the wrong region. Rotated runs now report a page-space rectangle that matches where they display (#806, #989).
