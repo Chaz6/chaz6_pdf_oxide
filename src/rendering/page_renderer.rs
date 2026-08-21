@@ -4301,13 +4301,28 @@ impl PageRenderer {
                 // raw component samples all fall within their [min,max] range is
                 // made fully transparent.
                 let ncomp = pdf_image.color_space().components();
-                match parse_color_key_mask(mask_array, ncomp) {
-                    Some(ranges) => {
-                        apply_color_key_mask(&pdf_image, &ranges, &mut rgba_image);
-                    },
-                    None => {
-                        log::debug!("Ignoring malformed color-key /Mask array (ncomp={})", ncomp);
-                    },
+                if !pdf_image.samples_are_raw() {
+                    // The extractor mapped a non-default /Decode into the
+                    // stored samples, so they are no longer in the space the
+                    // /Mask ranges are expressed in. Masking them here would
+                    // hide the wrong pixels; skip and say so rather than
+                    // silently inverting the transparent region.
+                    log::warn!(
+                        "Skipping colour-key /Mask: the stored samples are no longer in the \
+                         raw sample space the mask ranges are expressed in"
+                    );
+                } else {
+                    match parse_color_key_mask(mask_array, ncomp) {
+                        Some(ranges) => {
+                            apply_color_key_mask(&pdf_image, &ranges, &mut rgba_image);
+                        },
+                        None => {
+                            log::debug!(
+                                "Ignoring malformed color-key /Mask array (ncomp={})",
+                                ncomp
+                            );
+                        },
+                    }
                 }
             }
         }
