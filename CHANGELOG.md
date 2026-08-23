@@ -70,6 +70,7 @@ Issues reported by:
 - **@xpr0gamers** — #1032 (write paths on an encrypted source re-serialize raw ciphertext instead of decrypting it)
 - **@metheglin** — #1048 (Ruby render/render_with_layers always returns empty bytes)
 - **@dergachoff** — #979 (sparse two-column pages have their columns interleaved instead of read in stream order)
+- **`extract_chars` returned Form XObject text that no conformant renderer paints, disagreeing with `extract_spans` about the page's content** — a form's marks are clipped to its `/BBox` (ISO 32000-1:2008 §8.10.1), and the span layer applied that clip while the character layer did not. On the pdfTeX pattern, where a whole page is embedded as a figure-sized form and the embedded file still carries a full draft galley, `extract_chars` returned a second, invisible copy of the article interleaved with the real one — roughly twice the characters `extract_spans` reported for the same page. Beyond the API inconsistency this corrupted assembled text, because word-boundary detection reads the character layer: a statistics table came out as `Test 8 0.71 3 … 0.0 676` and `PD Me ds` where the clipped glyphs split the tokens. Forms covering ≥60% of the page are still treated as content frames rather than figures and are not clipped, so wrapper bodies are unaffected. Across the 419-PDF regression corpus, pages where the two layers disagreed by more than half went from 7 to 0 (#970).
 
 Thank you!
 
